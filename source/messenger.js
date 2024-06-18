@@ -33,7 +33,9 @@ class MessengerClient {
     this.caPublicKey = certAuthorityPublicKey
     this.govPublicKey = govPublicKey
     this.conns = {} // data for each active connection
-    this.certs = {} // certificates of other users
+
+    // I changed this to array /Frej
+    this.certs = [] // certificates of other users
     this.EGKeyPair = {} // keypair from generateCertificate
   }
 
@@ -47,8 +49,14 @@ class MessengerClient {
    * Return Type: certificate object/dictionary
    */
   async generateCertificate (username) {
-    throw ('not implemented!')
-    const certificate = {}
+
+    this.EGKeyPair = generateEG()
+
+    //NB: Not sure if this is correct/if it should contain anything else
+    const certificate = {
+      username: username,
+      elGamalPublic: this.EGKeyPair.pub
+    }
     return certificate
   }
 
@@ -65,7 +73,16 @@ class MessengerClient {
   // The signature will be on the output of stringifying the certificate
   // rather than on the certificate directly.
     const certString = JSON.stringify(certificate)
-    throw ('not implemented!')
+
+    //TODO: Something is wrong here... It verifies everything
+    if (verifyWithECDSA(this.caPublicKey, certString, signature)) {
+      //console.log('verified!!!')
+      this.certs.push(certificate)
+    }
+    else {
+      //console.log('not verified!!!')
+      throw ('not verified!')
+    }
   }
 
   /**
