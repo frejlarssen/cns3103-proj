@@ -52,7 +52,6 @@ class MessengerClient {
 
     this.EGKeyPair = generateEG()
 
-    //NB: Not sure if this is correct/if it should contain anything else
     const certificate = {
       username: username,
       elGamalPublic: this.EGKeyPair.pub
@@ -74,14 +73,11 @@ class MessengerClient {
   // rather than on the certificate directly.
     const certString = JSON.stringify(certificate)
 
-    //TODO: Something is wrong here... It verifies everything
-    if (verifyWithECDSA(this.caPublicKey, certString, signature)) {
-      //console.log('verified!!!')
+    if (await verifyWithECDSA(this.caPublicKey, certString, signature)) {
       this.certs.push(certificate)
     }
     else {
-      //console.log('not verified!!!')
-      throw ('not verified!')
+      throw ('Certificate not verified!')
     }
   }
 
