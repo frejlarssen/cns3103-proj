@@ -32,7 +32,9 @@ class MessengerClient {
     // Feel free to modify their structure as you see fit.
     this.caPublicKey = certAuthorityPublicKey
     this.govPublicKey = govPublicKey
-    this.conns = {} // data for each active connection
+
+    // I changed this to array /Frej
+    this.conns = [] // data for each active connection
 
     // I changed this to array /Frej
     this.certs = [] // certificates of other users
@@ -91,6 +93,39 @@ class MessengerClient {
  * Return Type: Tuple of [dictionary, ArrayBuffer]
  */
   async sendMessage (name, plaintext) {
+
+    let receiverConn = null;
+    for (let conn of this.conns) {
+      if (conn.name == name) {
+        receiverConn = conn;
+        break;
+      }
+    }
+
+    if (receiverConn == null) {
+      let receiverCert = null;
+      for (let cert of this.certs) {
+        if (cert.username == name) {
+          receiverCert = cert;
+          break;
+        }
+      }
+      if (receiverCert != null) {
+        let sharedSecret = await computeDH(this.EGKeyPair.sec, receiverCert.publicKey);
+
+        receiverConn = {
+          username: name,
+          certificate: receiverCert
+        };
+        this.conns.push(receiverConn);
+      }
+      else {
+        throw ('No certificate found!');
+      }
+    }
+
+    //TODO: HKDF step, save state in conn, do encryption
+
     throw ('not implemented!')
     const header = {}
     const ciphertext = ''
