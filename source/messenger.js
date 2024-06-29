@@ -50,11 +50,11 @@ class MessengerClient {
    */
   async generateCertificate (username) {
 
-    this.EGKeyPair = generateEG()
+    this.EGKeyPair = await generateEG()
 
     const certificate = {
       username: username,
-      elGamalPublic: this.EGKeyPair.pub
+      publicKey: this.EGKeyPair.pub
     }
     return certificate
   }
