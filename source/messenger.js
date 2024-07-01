@@ -101,7 +101,7 @@ class MessengerClient {
         break;
       }
     }
-
+    let sharedSecret;
     if (receiverConn == null) {
       let receiverCert = null;
       for (let cert of this.certs) {
@@ -111,11 +111,17 @@ class MessengerClient {
         }
       }
       if (receiverCert != null) {
-        let sharedSecret = await computeDH(this.EGKeyPair.sec, receiverCert.publicKey);
+        sharedSecret = await computeDH(this.EGKeyPair.sec, receiverCert.publicKey);
+        // Shared secret is input to root chain.
 
         receiverConn = {
           username: name,
-          certificate: receiverCert
+          certificate: receiverCert,
+          kdfKeys: {
+            rootChain: null,
+            sendingChain: null, //chain key
+            receivingChain: null //chain key
+          }
         };
         this.conns.push(receiverConn);
       }
@@ -124,11 +130,23 @@ class MessengerClient {
       }
     }
 
-    //TODO: HKDF step, save state in conn, do encryption
+    // encrypt plaintext with symmetric encryption (AES-GCM) using messageKey,
+    // which is the output from the sending KDF chain
 
-    throw ('not implemented!')
-    const header = {}
-    const ciphertext = ''
+    // TODO: Update keys
+
+    // TODO: HKDF step, save state in conn, do encryption
+    // TODO: Use correct key
+    let aesKey = await HMACtoAESKey(sharedSecret, "constant");
+
+    let iv = genRandomSalt();
+
+    const header = {
+      publicKey: this.EGKeyPair.pub,
+      iv: iv
+    }
+
+    const ciphertext = await encryptWithGCM(aesKey, plaintext, iv);
     return [header, ciphertext]
   }
 
@@ -142,8 +160,17 @@ class MessengerClient {
  * Return Type: string
  */
   async receiveMessage (name, [header, ciphertext]) {
-    throw ('not implemented!')
-    return plaintext
+
+    // TODO: Only compute new DH when necessary.
+    let dhOutput = await computeDH(this.EGKeyPair.sec, header.publicKey);
+
+    // TODO: Ratchet steps
+
+    // TODO: Use correct key
+    let aesKey = await HMACtoAESKey(dhOutput, "constant");
+
+    let plaintext = await decryptWithGCM(aesKey, ciphertext, header.iv);
+    return bufferToString(plaintext);
   }
 };
 
