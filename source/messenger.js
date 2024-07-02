@@ -27,8 +27,8 @@ class Connection {
     this.name = name
     this.certificate = certificate
     this.dhRachetKeyPair = {
-      pub: null,
-      priv: null
+      priv: null,
+      pub: null
     }
     this.dhRemoteKey = null
     this.rootKey = null
@@ -133,14 +133,15 @@ class MessengerClient {
     let constantSalt = await HMACtoHMACKey(conn.chainKeys.sending, "constant");
     let messageKey;
     [conn.chainKeys.sending, messageKey] = await HKDF(conn.chainKeys.sending, constantSalt, "ratchet-str");
-    let header = {
-      dhPub: conn.dhRachetKeyPair.pub,
-      messageNumbersPrevious: conn.messageNumbersPrevious,
-      messageNumbersSending: conn.messageNumbersSending
-    }
     conn.messageNumbersSending += 1;
     let aesKey = await HMACtoAESKey(messageKey, "constant");
     let iv = genRandomSalt();
+    let header = {
+      dhPub: conn.dhRachetKeyPair.pub,
+      messageNumbersPrevious: conn.messageNumbersPrevious,
+      messageNumbersSending: conn.messageNumbersSending,
+      iv: iv,
+    }
     let ciphertext = await encryptWithGCM(aesKey, plaintext, iv);
     return [header, ciphertext]
   }
@@ -157,23 +158,20 @@ class MessengerClient {
   async sendMessage (name, plaintext) {
 
     let conn = this.findConn(name);
-    let intermediateSecret;
+    let dhOutput;
 
     if (conn == null) {
       let receiverCert = this.findCert(name);
-      //console.log("rec cert: ");
-      //console.log(receiverCert);
       if (receiverCert != null) {
         let secretKey = await computeDH(this.EGKeyPair.sec, receiverCert.publicKey);
         conn = new Connection(name, receiverCert);
         let keyPair = await generateEG();
-        conn.dhRachetKeyPair.pub = keyPair.pub;
         conn.dhRachetKeyPair.priv = keyPair.sec;
+        conn.dhRachetKeyPair.pub = keyPair.pub;
         conn.dhRemoteKey = receiverCert.publicKey;
-        intermediateSecret = await computeDH(conn.dhRachetKeyPair.priv, conn.dhRemoteKey);
-        //console.log("secretKey:")
-        //console.log(secretKey)
-        let hkdfOutput = await HKDF(secretKey, intermediateSecret, "ratchet-str");
+        dhOutput = await computeDH(conn.dhRachetKeyPair.priv, conn.dhRemoteKey);
+
+        let hkdfOutput = await HKDF(secretKey, dhOutput, "ratchet-str");
         [conn.rootKey, conn.chainKeys.sending] = hkdfOutput;
         this.conns.push(conn);
       }
@@ -190,22 +188,17 @@ class MessengerClient {
   }
 
   async dhRatchet (conn, header) {
-    //console.log("in dhRatchet");
     conn.messageNumbersPrevious = conn.messageNumbersSending;
     conn.messageNumbers.sending = 0;
     conn.messageNumbers.receiving = 0;
     conn.dhRemoteKey = header.dhPub;
     let dhOutput = await computeDH(conn.dhRachetKeyPair.priv, conn.dhRemoteKey);
-    //console.log("conn.rootKey in dhRatchet:");
-    //console.log(conn.rootKey);
-    //console.log("dhOutput in dhRatchet:");
-    //console.log(dhOutput);
-    //console.log("after dhOutput");
-    [conn.rootKey, conn.chainKeys.receiving] = await HKDF(conn.rootKey, dhOutput);
-    //console.log("conn.chainKeys.receiving after initialization:");
-    //console.log(conn.chainKeys.receiving);
-    conn.dhRachetKeyPair = generateEG();
-    [conn.rootKey, conn.chainKeys.receiving] = await HKDF(conn.rootKey, dhOutput);
+    [conn.rootKey, conn.chainKeys.receiving] = await HKDF(conn.rootKey, dhOutput, "ratchet-str");
+    let keyPair = await generateEG();
+    conn.dhRachetKeyPair.priv = keyPair.sec;
+    conn.dhRachetKeyPair.pub = keyPair.pub;
+    dhOutput = await computeDH(conn.dhRachetKeyPair.priv, conn.dhRemoteKey);
+    [conn.rootKey, conn.chainKeys.sending] = await HKDF(conn.rootKey, dhOutput, "ratchet-str");
   }
 
   async ratchetDecrypt (conn, header, ciphertext) {
@@ -215,19 +208,16 @@ class MessengerClient {
     }
     if (header.dhPub != conn.dhRemoteKey) {
       // TODO: skipMessageKeys()
-      console.log("dhRatchet()");
-      this.dhRatchet(conn, header);
+      await this.dhRatchet(conn, header);
     }
     // TODO: skipMessageKeys()
     // TODO: constantSalt is very arbitrarily defined and should in fact be constant
-    console.log("conn.chainKeys.receiving:");
-    console.log(conn.chainKeys.receiving);
     let constantSalt = await HMACtoHMACKey(conn.chainKeys.receiving, "constant");
     let messageKey;
     [conn.chainKeys.receiving, messageKey] = await HKDF(conn.chainKeys.receiving, constantSalt, "ratchet-str");
     conn.messageNumbers.receiving += 1;
     let aesKey = await HMACtoAESKey(messageKey, "constant");
-    let iv = genRandomSalt();
+    let iv = header.iv;
     return await decryptWithGCM(aesKey, ciphertext, iv);
   }
 
@@ -258,8 +248,8 @@ class MessengerClient {
         throw ('No certificate found!');
       }
     }
-
-    return this.ratchetDecrypt(conn, header, ciphertext);
+    let plaintext = await this.ratchetDecrypt(conn, header, ciphertext);
+    return bufferToString(plaintext);
   }
 };
 
