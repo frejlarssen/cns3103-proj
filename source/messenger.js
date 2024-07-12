@@ -135,14 +135,23 @@ class MessengerClient {
     [conn.chainKeys.sending, messageKey] = await HKDF(conn.chainKeys.sending, constantSalt, "ratchet-str");
     conn.messageNumbersSending += 1;
     let aesKey = await HMACtoAESKey(messageKey, "constant");
+    let aesKeyRaw = await HMACtoAESKey(messageKey, "constant", true);
     let iv = genRandomSalt();
+    let govKeyPair = await generateEG();
+    let govKey = await computeDH(govKeyPair.sec, this.govPublicKey);
+    govKey = await HMACtoAESKey(govKey, govEncryptionDataStr);
+    let ivGov = genRandomSalt();
+    let cGov = await encryptWithGCM(govKey, aesKeyRaw, ivGov);
     let header = {
       dhPub: conn.dhRachetKeyPair.pub,
       messageNumbersPrevious: conn.messageNumbersPrevious,
       messageNumbersSending: conn.messageNumbersSending,
-      iv: iv,
+      receiverIV: iv,
+      vGov: govKeyPair.pub,
+      ivGov: ivGov,
+      cGov: cGov,
     }
-    let ciphertext = await encryptWithGCM(aesKey, plaintext, iv);
+    let ciphertext = await encryptWithGCM(aesKey, plaintext, iv, JSON.stringify(header));
     return [header, ciphertext]
   }
 
@@ -184,6 +193,7 @@ class MessengerClient {
   }
 
   trySkippedMessageKeys (conn, header, ciphertext) {
+    // TODO: Implement
     return null;
   }
 
@@ -217,8 +227,8 @@ class MessengerClient {
     [conn.chainKeys.receiving, messageKey] = await HKDF(conn.chainKeys.receiving, constantSalt, "ratchet-str");
     conn.messageNumbers.receiving += 1;
     let aesKey = await HMACtoAESKey(messageKey, "constant");
-    let iv = header.iv;
-    return await decryptWithGCM(aesKey, ciphertext, iv);
+    let iv = header.receiverIV;
+    return await decryptWithGCM(aesKey, ciphertext, iv, JSON.stringify(header));
   }
 
   /**
