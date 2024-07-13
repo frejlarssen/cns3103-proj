@@ -109,7 +109,7 @@ class MessengerClient {
   findConn(name) {
     let specificConn = null;
     for (let conn of this.conns) {
-      if (conn.user == name) {
+      if (conn.name == name) {
         specificConn = conn;
         break;
       }
@@ -253,6 +253,7 @@ class MessengerClient {
         conn.dhRachetKeyPair.pub = this.EGKeyPair.pub;
 
         conn.rootKey = await computeDH(this.EGKeyPair.sec, senderCert.publicKey);
+        this.conns.push(conn);
       }
       else {
         throw ('No certificate found!');
